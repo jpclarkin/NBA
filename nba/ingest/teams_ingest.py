@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from nba.db.session import get_session_factory
 from nba.db.models import Team
-from nba.sources.nba_client import NBAAPIClient
+from nba.sources.nba_api_client_fixed import NBAAPIClientFixed as NBAAPIClient
 
 
 def ingest_teams(session: Session = None) -> List[Team]:

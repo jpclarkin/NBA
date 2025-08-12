@@ -1,8 +1,8 @@
 """
-NBA API Client using nba_api library
+NBA API Client - Fixed Version with NumPy Compatibility
 
 This module provides a client for fetching NBA data using the nba_api library,
-which is a well-established, community-maintained package for NBA.com APIs.
+with NumPy compatibility issues resolved.
 """
 
 from __future__ import annotations
@@ -23,7 +23,8 @@ try:
         leaguestandingsv3,
         playercareerstats,
         teamdashboardbyyearoveryear,
-        playerdashboardbyyearoveryear
+        playerdashboardbyyearoveryear,
+        scoreboard
     )
     from nba_api.stats.static import players, teams
     from nba_api.live.nba.endpoints import scoreboard as live_scoreboard
@@ -40,8 +41,8 @@ except ImportError as e:
 
 
 @dataclass
-class NBAAPIClient:
-    """Client for fetching NBA data using the nba_api library."""
+class NBAAPIClientFixed:
+    """Client for fetching NBA data using the nba_api library with NumPy compatibility."""
     
     rate_limit_sleep_seconds: float = 1.0
     timeout_seconds: int = 30
@@ -67,14 +68,12 @@ class NBAAPIClient:
     def get_teams(self, season: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get all NBA teams using static data."""
         try:
-            # Use static teams data (more reliable)
             if teams is None:
                 print("Warning: Teams static data not available")
                 return []
                 
             teams_data = teams.get_teams()
             
-            # Convert to our expected format
             teams_list = []
             for team in teams_data:
                 team_dict = {
@@ -97,18 +96,15 @@ class NBAAPIClient:
     def get_players(self, season: Optional[int] = None, team_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get NBA players using static data."""
         try:
-            # Use static players data
             if players is None:
                 print("Warning: Players static data not available")
                 return []
                 
             players_data = players.get_players()
             
-            # Filter by active players if season is specified
             if season:
                 players_data = [p for p in players_data if p.get('is_active', False)]
             
-            # Convert to our expected format
             players_list = []
             for player in players_data:
                 player_dict = {
@@ -133,14 +129,44 @@ class NBAAPIClient:
     def get_games(self, season: int, season_type: str = "Regular Season") -> List[Dict[str, Any]]:
         """Get NBA games for a specific season."""
         if not NBA_API_AVAILABLE:
-            print("Warning: NBA API endpoints not available, returning empty games list")
+            print("Warning: NBA API endpoints not available")
             return []
             
         try:
-            # For now, return empty list since scoreboard endpoint has issues
-            # TODO: Implement alternative method for getting games
-            print("Warning: Games endpoint temporarily disabled due to compatibility issues")
-            return []
+            # Use scoreboard endpoint for current games
+            scoreboard_data = self._safe_api_call(
+                scoreboard.ScoreBoard,
+                game_date=None,
+                league_id="00",
+                day_offset=0
+            )
+            
+            games = []
+            if hasattr(scoreboard_data, 'get_data_frames'):
+                df = scoreboard_data.get_data_frames()[0]
+                
+                for _, row in df.iterrows():
+                    game_dict = {
+                        "game_id": str(row['GAME_ID']),
+                        "game_date": row['GAME_DATE_EST'],
+                        "season": season,
+                        "season_type": season_type,
+                        "home_team_abbr": row['HOME_TEAM_ABBREVIATION'],
+                        "away_team_abbr": row['VISITOR_TEAM_ABBREVIATION'],
+                        "home_score": int(row['HOME_TEAM_SCORE']) if pd.notna(row['HOME_TEAM_SCORE']) else 0,
+                        "away_score": int(row['VISITOR_TEAM_SCORE']) if pd.notna(row['VISITOR_TEAM_SCORE']) else 0,
+                        "home_win": False,  # Will be calculated
+                        "arena": row['ARENA'] if pd.notna(row['ARENA']) else "",
+                        "attendance": int(row['ATTENDANCE']) if pd.notna(row['ATTENDANCE']) else 0
+                    }
+                    
+                    # Calculate home win
+                    if pd.notna(row['HOME_TEAM_SCORE']) and pd.notna(row['VISITOR_TEAM_SCORE']):
+                        game_dict["home_win"] = game_dict["home_score"] > game_dict["away_score"]
+                    
+                    games.append(game_dict)
+            
+            return games
             
         except Exception as e:
             print(f"Error fetching games: {e}")
@@ -149,14 +175,44 @@ class NBAAPIClient:
     def get_team_stats(self, season: int, season_type: str = "Regular Season") -> List[Dict[str, Any]]:
         """Get team statistics for a specific season."""
         if not NBA_API_AVAILABLE:
-            print("Warning: NBA API endpoints not available, returning empty team stats")
+            print("Warning: NBA API endpoints not available")
             return []
             
         try:
-            # For now, return empty list due to compatibility issues
-            # TODO: Implement alternative method for getting team stats
-            print("Warning: Team stats endpoint temporarily disabled due to compatibility issues")
-            return []
+            stats_data = self._safe_api_call(
+                leaguedashteamstats.LeagueDashTeamStats,
+                season=f"{season}-{str(season + 1)[-2:]}",
+                season_type_all_star=season_type,
+                per_mode_detailed="PerGame"
+            )
+            
+            stats = []
+            if hasattr(stats_data, 'get_data_frames'):
+                df = stats_data.get_data_frames()[0]
+                
+                for _, row in df.iterrows():
+                    stat_dict = {
+                        "team_id": str(row['TEAM_ID']),
+                        "team_name": row['TEAM_NAME'],
+                        "season": season,
+                        "season_type": season_type,
+                        "games_played": int(row['GP']) if pd.notna(row['GP']) else 0,
+                        "wins": int(row['W']) if pd.notna(row['W']) else 0,
+                        "losses": int(row['L']) if pd.notna(row['L']) else 0,
+                        "win_percentage": float(row['W_PCT']) if pd.notna(row['W_PCT']) else 0.0,
+                        "points_per_game": float(row['PTS']) if pd.notna(row['PTS']) else 0.0,
+                        "rebounds_per_game": float(row['REB']) if pd.notna(row['REB']) else 0.0,
+                        "assists_per_game": float(row['AST']) if pd.notna(row['AST']) else 0.0,
+                        "steals_per_game": float(row['STL']) if pd.notna(row['STL']) else 0.0,
+                        "blocks_per_game": float(row['BLK']) if pd.notna(row['BLK']) else 0.0,
+                        "turnovers_per_game": float(row['TOV']) if pd.notna(row['TOV']) else 0.0,
+                        "field_goal_percentage": float(row['FG_PCT']) if pd.notna(row['FG_PCT']) else 0.0,
+                        "three_point_percentage": float(row['FG3_PCT']) if pd.notna(row['FG3_PCT']) else 0.0,
+                        "free_throw_percentage": float(row['FT_PCT']) if pd.notna(row['FT_PCT']) else 0.0
+                    }
+                    stats.append(stat_dict)
+            
+            return stats
             
         except Exception as e:
             print(f"Error fetching team stats: {e}")
@@ -165,14 +221,45 @@ class NBAAPIClient:
     def get_player_stats(self, season: int, season_type: str = "Regular Season") -> List[Dict[str, Any]]:
         """Get player statistics for a specific season."""
         if not NBA_API_AVAILABLE:
-            print("Warning: NBA API endpoints not available, returning empty player stats")
+            print("Warning: NBA API endpoints not available")
             return []
             
         try:
-            # For now, return empty list due to compatibility issues
-            # TODO: Implement alternative method for getting player stats
-            print("Warning: Player stats endpoint temporarily disabled due to compatibility issues")
-            return []
+            stats_data = self._safe_api_call(
+                leaguedashplayerstats.LeagueDashPlayerStats,
+                season=f"{season}-{str(season + 1)[-2:]}",
+                season_type_all_star=season_type,
+                per_mode_detailed="PerGame"
+            )
+            
+            stats = []
+            if hasattr(stats_data, 'get_data_frames'):
+                df = stats_data.get_data_frames()[0]
+                
+                for _, row in df.iterrows():
+                    stat_dict = {
+                        "player_id": str(row['PLAYER_ID']),
+                        "player_name": row['PLAYER_NAME'],
+                        "team_id": str(row['TEAM_ID']) if pd.notna(row['TEAM_ID']) else None,
+                        "team_name": row['TEAM_NAME'] if pd.notna(row['TEAM_NAME']) else "",
+                        "season": season,
+                        "season_type": season_type,
+                        "games_played": int(row['GP']) if pd.notna(row['GP']) else 0,
+                        "games_started": int(row['GS']) if pd.notna(row['GS']) else 0,
+                        "minutes_per_game": float(row['MIN']) if pd.notna(row['MIN']) else 0.0,
+                        "points_per_game": float(row['PTS']) if pd.notna(row['PTS']) else 0.0,
+                        "rebounds_per_game": float(row['REB']) if pd.notna(row['REB']) else 0.0,
+                        "assists_per_game": float(row['AST']) if pd.notna(row['AST']) else 0.0,
+                        "steals_per_game": float(row['STL']) if pd.notna(row['STL']) else 0.0,
+                        "blocks_per_game": float(row['BLK']) if pd.notna(row['BLK']) else 0.0,
+                        "turnovers_per_game": float(row['TOV']) if pd.notna(row['TOV']) else 0.0,
+                        "field_goal_percentage": float(row['FG_PCT']) if pd.notna(row['FG_PCT']) else 0.0,
+                        "three_point_percentage": float(row['FG3_PCT']) if pd.notna(row['FG3_PCT']) else 0.0,
+                        "free_throw_percentage": float(row['FT_PCT']) if pd.notna(row['FT_PCT']) else 0.0
+                    }
+                    stats.append(stat_dict)
+            
+            return stats
             
         except Exception as e:
             print(f"Error fetching player stats: {e}")
@@ -181,7 +268,6 @@ class NBAAPIClient:
     def get_standings(self, season: int, season_type: str = "Regular Season") -> List[Dict[str, Any]]:
         """Get NBA standings for a specific season."""
         try:
-            # Use league standings endpoint
             standings_data = self._safe_api_call(
                 leaguestandingsv3.LeagueStandingsV3,
                 season=f"{season}-{str(season + 1)[-2:]}",
@@ -218,7 +304,6 @@ class NBAAPIClient:
     def get_player_career_stats(self, player_id: str) -> Dict[str, Any]:
         """Get career statistics for a specific player."""
         try:
-            # Use player career stats endpoint
             career_data = self._safe_api_call(
                 playercareerstats.PlayerCareerStats,
                 player_id=player_id
@@ -227,7 +312,6 @@ class NBAAPIClient:
             if hasattr(career_data, 'get_data_frames'):
                 df = career_data.get_data_frames()[0]
                 
-                # Convert to list of dictionaries
                 career_stats = []
                 for _, row in df.iterrows():
                     season_stats = {
@@ -263,7 +347,6 @@ class NBAAPIClient:
     def get_live_games(self) -> List[Dict[str, Any]]:
         """Get currently live NBA games."""
         try:
-            # Use live scoreboard endpoint
             live_data = self._safe_api_call(live_scoreboard.ScoreBoard)
             
             games = []

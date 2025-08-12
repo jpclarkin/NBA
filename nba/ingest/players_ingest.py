@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from nba.db.session import get_session_factory
 from nba.db.models import Player, Team
-from nba.sources.nba_client import NBAAPIClient
+from nba.sources.nba_api_client_fixed import NBAAPIClientFixed as NBAAPIClient
 
 
 def ingest_players(season: Optional[int] = None, team_id: Optional[str] = None,
@@ -43,7 +43,7 @@ def ingest_players(season: Optional[int] = None, team_id: Optional[str] = None,
         for player_data in players_data:
             # Check if player already exists
             existing_player = session.query(Player).filter(
-                Player.player_id == player_data.get("PLAYER_ID")
+                Player.player_id == player_data.get("player_id")
             ).first()
             
             if existing_player:
@@ -85,16 +85,16 @@ def create_player_from_data(player_data: Dict[str, Any], session: Session) -> Op
     try:
         # Get team reference
         team = None
-        if player_data.get("TEAM_ID"):
+        if player_data.get("team_id"):
             team = session.query(Team).filter(
-                Team.team_id == str(player_data["TEAM_ID"])
+                Team.team_id == str(player_data["team_id"])
             ).first()
         
         # Parse birth date
         birth_date = None
-        if player_data.get("BIRTH_DATE"):
+        if player_data.get("birth_date"):
             try:
-                birth_date = datetime.strptime(player_data["BIRTH_DATE"], "%Y-%m-%d").date()
+                birth_date = datetime.strptime(player_data["birth_date"], "%Y-%m-%d").date()
             except (ValueError, TypeError):
                 pass
         
@@ -103,55 +103,55 @@ def create_player_from_data(player_data: Dict[str, Any], session: Session) -> Op
         draft_round = None
         draft_number = None
         
-        if player_data.get("DRAFT_YEAR"):
+        if player_data.get("draft_year"):
             try:
-                draft_year = int(player_data["DRAFT_YEAR"])
+                draft_year = int(player_data["draft_year"])
             except (ValueError, TypeError):
                 pass
         
-        if player_data.get("DRAFT_ROUND"):
+        if player_data.get("draft_round"):
             try:
-                draft_round = int(player_data["DRAFT_ROUND"])
+                draft_round = int(player_data["draft_round"])
             except (ValueError, TypeError):
                 pass
         
-        if player_data.get("DRAFT_NUMBER"):
+        if player_data.get("draft_number"):
             try:
-                draft_number = int(player_data["DRAFT_NUMBER"])
+                draft_number = int(player_data["draft_number"])
             except (ValueError, TypeError):
                 pass
         
         # Parse weight
         weight = None
-        if player_data.get("WEIGHT"):
+        if player_data.get("weight"):
             try:
-                weight = int(player_data["WEIGHT"])
+                weight = int(player_data["weight"])
             except (ValueError, TypeError):
                 pass
         
         # Split name into first and last
-        full_name = player_data.get("PLAYER_NAME", "")
+        full_name = player_data.get("name", "")
         name_parts = full_name.split(" ", 1)
         first_name = name_parts[0] if len(name_parts) > 0 else ""
         last_name = name_parts[1] if len(name_parts) > 1 else ""
         
         player = Player(
-            player_id=str(player_data.get("PLAYER_ID", "")),
+            player_id=str(player_data.get("player_id", "")),
             name=full_name,
             first_name=first_name,
             last_name=last_name,
             team_id=team.id if team else None,
-            position=player_data.get("POSITION"),
-            height=player_data.get("HEIGHT"),
+            position=player_data.get("position"),
+            height=player_data.get("height"),
             weight=weight,
             birth_date=birth_date,
-            birth_place=player_data.get("BIRTH_PLACE"),
-            college=player_data.get("COLLEGE"),
+            birth_place=player_data.get("birth_place"),
+            college=player_data.get("college"),
             draft_year=draft_year,
             draft_round=draft_round,
             draft_number=draft_number,
-            is_active=player_data.get("IS_ACTIVE", True),
-            jersey_number=player_data.get("JERSEY_NUMBER")
+            is_active=player_data.get("is_active", True),
+            jersey_number=player_data.get("jersey_number")
         )
         
         return player
@@ -171,29 +171,29 @@ def update_player_data(player: Player, player_data: Dict[str, Any]) -> None:
     """
     try:
         # Update basic information
-        if player_data.get("PLAYER_NAME"):
-            player.name = player_data["PLAYER_NAME"]
+        if player_data.get("name"):
+            player.name = player_data["name"]
             name_parts = player.name.split(" ", 1)
             player.first_name = name_parts[0] if len(name_parts) > 0 else ""
             player.last_name = name_parts[1] if len(name_parts) > 1 else ""
         
-        if player_data.get("POSITION"):
-            player.position = player_data["POSITION"]
+        if player_data.get("position"):
+            player.position = player_data["position"]
         
-        if player_data.get("HEIGHT"):
-            player.height = player_data["HEIGHT"]
+        if player_data.get("height"):
+            player.height = player_data["height"]
         
-        if player_data.get("WEIGHT"):
+        if player_data.get("weight"):
             try:
-                player.weight = int(player_data["WEIGHT"])
+                player.weight = int(player_data["weight"])
             except (ValueError, TypeError):
                 pass
         
-        if player_data.get("JERSEY_NUMBER"):
-            player.jersey_number = player_data["JERSEY_NUMBER"]
+        if player_data.get("jersey_number"):
+            player.jersey_number = player_data["jersey_number"]
         
-        if "IS_ACTIVE" in player_data:
-            player.is_active = player_data["IS_ACTIVE"]
+        if "is_active" in player_data:
+            player.is_active = player_data["is_active"]
         
     except Exception as e:
         print(f"Error updating player data: {e}")
