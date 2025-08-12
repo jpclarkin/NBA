@@ -14,6 +14,7 @@ from datetime import datetime, date
 import requests
 
 from nba.config import get_settings
+from .auth import NBAAPIAuthenticator, get_authenticator
 
 
 NBA_BASE_URL = "https://stats.nba.com/stats"
@@ -40,20 +41,37 @@ class NBAAPIClient:
     rate_limit_sleep_seconds: float = 1.0
     timeout_seconds: int = 30
     max_retries: int = 5
+    authenticator: Optional[NBAAPIAuthenticator] = None
 
     def __post_init__(self) -> None:
         if self.api_key is None:
             self.api_key = get_settings().nba_api_key
+        
+        # Initialize authenticator if not provided
+        if self.authenticator is None:
+            self.authenticator = get_authenticator()
 
     def _get(self, endpoint: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Make a GET request to the NBA API with retry logic."""
         url = f"{NBA_BASE_URL}/{endpoint}"
         
+        # Use authenticated session if available, otherwise fall back to basic headers
+        if self.authenticator:
+            headers = self.authenticator.get_authenticated_headers()
+            session = self.authenticator.session
+        else:
+            headers = NBA_API_HEADERS
+            session = requests
+        
         for attempt in range(self.max_retries):
             try:
-                resp = requests.get(
+                # Apply rate limiting if using authenticator
+                if self.authenticator:
+                    self.authenticator._rate_limit()
+                
+                resp = session.get(
                     url, 
-                    headers=NBA_API_HEADERS, 
+                    headers=headers, 
                     params=params, 
                     timeout=self.timeout_seconds
                 )
