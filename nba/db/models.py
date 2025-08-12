@@ -234,7 +234,6 @@ class GameStats(Base):
 
     __table_args__ = (
         Index("ix_game_stats_game_team", "game_id", "team_id"),
-        Index("ix_game_stats_team_season", "team_id", "season"),
     )
 
     def __repr__(self) -> str:
@@ -293,7 +292,6 @@ class PlayerGameStats(Base):
 
     __table_args__ = (
         Index("ix_player_game_stats_game_player", "game_id", "player_id"),
-        Index("ix_player_game_stats_player_season", "player_id", "season"),
     )
 
     def __repr__(self) -> str:

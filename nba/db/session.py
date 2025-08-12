@@ -10,7 +10,7 @@ from nba.config import get_settings
 from .models import Base
 
 
-def get_session_factory() -> sessionmaker[Session]:
+def get_session_factory() -> sessionmaker:
     """Get SQLAlchemy session factory."""
     settings = get_settings()
     
